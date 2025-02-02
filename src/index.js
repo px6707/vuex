@@ -25,14 +25,17 @@ export class Store {
   } = {}) {
     // bind dispatch to self
     const dispatch = this.dispatch
+    // 包装dispatch函数，
     this.dispatch = (...args) => {
       dispatch.apply(this, args)
     }
     // use a Vue instance to store the state tree
+    // 使用一个vue实例包保存state状态，因为vue实例能够对数据进行响应式处理
     this._vm = new Vue({
       data: state
     })
     this._dispatching = false
+    // 创建存储actions和getters的空对象
     this.actions = Object.create(null)
     this.getters = Object.create(null)
     this._setupActions(actions)
@@ -41,6 +44,7 @@ export class Store {
     this._setupGetters(getters)
     // add extra warnings in strict mode
     if (strict) {
+      // 严格模式下不允许直接对state进行修改
       this._setupMutationCheck()
     }
   }
@@ -51,11 +55,12 @@ export class Store {
    *
    * @return {Object}
    */
-
+  // 获取state的时候从vue实例上获取
   get state () {
     return this._vm._data
   }
 
+  // 设置state的时候报错，只允许使用mutatiuon来修改
   set state (v) {
     throw new Error('[vuex] Vuex root state is read only.')
   }
@@ -67,34 +72,43 @@ export class Store {
    */
 
   dispatch (type, ...payload) {
+    // 获取要执行的mutation
     const mutation = this._mutations[type]
     const prevSnapshot = this._prevSnapshot
     const state = this.state
     let snapshot, clonedPayload
     if (mutation) {
+      // 正在执行
       this._dispatching = true
       // apply the mutation
+      // 如果是数组，就遍历执行
       if (Array.isArray(mutation)) {
         mutation.forEach(m => m(state, ...payload))
       } else {
+        // 否则直接执行
         mutation(state, ...payload)
       }
+      // 执行完成
       this._dispatching = false
       // invoke middlewares
       if (this._needSnapshots) {
+        // 如果需要快照，深拷贝变化后的state，作为快照的前一个状态
         snapshot = this._prevSnapshot = deepClone(state)
         clonedPayload = deepClone(payload)
       }
       this._middlewares.forEach(m => {
         if (m.onMutation) {
           if (m.snapshot) {
+            // 中间件需要快照，把快照的前一个状态和突变后的状态传给中间件
             m.onMutation({ type, payload: clonedPayload }, snapshot, prevSnapshot)
           } else {
+            // 不需要传递快照，直接传state
             m.onMutation({ type, payload }, state)
           }
         }
       })
     } else {
+      // 要执行的mutation不存在，报错
       console.warn(`[vuex] Unknown mutation: ${ type }`)
     }
   }
@@ -136,6 +150,7 @@ export class Store {
     const Watcher = this._vm._watchers[0].constructor
     unwatch()
     new Watcher(this._vm, '$data', () => {
+      // 如果不是在执行dispatch，的时候对state进行修改，抛出错误
       if (!this._dispatching) {
         throw new Error(
           '[vuex] Do not mutate vuex store state outside mutation handlers.'
@@ -158,10 +173,12 @@ export class Store {
 
   _setupActions (actions, hot) {
     this._actions = Object.create(null)
+    // 合并actions数组，返回新的actions对象
     actions = Array.isArray(actions)
       ? mergeObjects(actions)
       : actions
     Object.keys(actions).forEach(name => {
+      // actions放入this._actions，且同步给this.actions
       this._actions[name] = createAction(actions[name], this)
       if (!this.actions[name]) {
         this.actions[name] = (...args) => this._actions[name](...args)
@@ -189,6 +206,7 @@ export class Store {
       ? mergeObjects(getters)
       : getters
     Object.keys(getters).forEach(name => {
+      // getters放入this._getters，且同步给this.getters
       this._getters[name] = (...payload) => getters[name](this.state, ...payload)
       if (!this.getters[name]) {
         this.getters[name] = (...args) => this._getters[name](...args)
@@ -207,6 +225,7 @@ export class Store {
    */
 
   _setupMutations (mutations) {
+    // mutations放入this._mutations
     this._mutations = Array.isArray(mutations)
       ? mergeObjects(mutations, true)
       : mutations
@@ -224,7 +243,9 @@ export class Store {
    */
 
   _setupMiddlewares (middlewares, state) {
+    // 组合默认中间件和传入的中间件给this._middlewares
     this._middlewares = [devtoolMiddleware].concat(middlewares)
+    // 如果有中间件需要快照，设置标志位
     this._needSnapshots = middlewares.some(m => m.snapshot)
     if (this._needSnapshots) {
       console.log(
@@ -232,11 +253,13 @@ export class Store {
         'for each mutation. Make sure to use them only during development.'
       )
     }
+    // 初始化快照
     const initialSnapshot = this._prevSnapshot = this._needSnapshots
       ? deepClone(state)
       : null
     // call init hooks
     this._middlewares.forEach(m => {
+      // 调用中间件的onInit方法
       if (m.onInit) {
         m.onInit(m.snapshot ? initialSnapshot : state)
       }
@@ -248,16 +271,23 @@ export class Store {
 export { createLogger }
 
 // export install function
+// vue插件，全局注入store属性，所有组件都可以通过 this.$store 访问 store
 export function install (_Vue) {
+  // 保存一个全局的Vue
   Vue = _Vue
+  // 保存原始的_init方法
   const _init = Vue.prototype._init
+  // 重写_init方法
   Vue.prototype._init = function (options) {
     options = options || {}
     if (options.store) {
+      // 如果options中有store，那么this.$store = options.store
       this.$store = options.store
     } else if (options.parent && options.parent.$store) {
+      // 如果没有提供store，则使用父级的store，比如子组件直接使用父级的store，就可以使整个Vue树结构都有$store属性
       this.$store = options.parent.$store
     }
+    // 调用原始的_init，保证vue的初始化
     _init.call(this, options)
   }
 }

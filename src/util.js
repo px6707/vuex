@@ -9,9 +9,11 @@
 export function createAction (action, store) {
   if (typeof action === 'string') {
     // simple action string shorthand
+    // action是字符串，拼写成函数
     return (...payload) => store.dispatch(action, ...payload)
   } else if (typeof action === 'function') {
     // normal action
+    // 如果是函数，则执行它，并把当前store作为第一个参数
     return (...payload) => action(store, ...payload)
   }
 }
@@ -48,15 +50,18 @@ export function mergeObjects (arr, allowDuplicate) {
         // allow multiple mutation objects to contain duplicate
         // handlers for the same mutation type
         if (allowDuplicate) {
+          // 允许方法同名的情况下，合并handler成为数组
           if (Array.isArray(existing)) {
             existing.push(obj[key])
           } else {
             prev[key] = [prev[key], obj[key]]
           }
         } else {
+          // 如果多个action方法名相同，则警告
           console.warn(`[vuex] Duplicate action: ${ key }`)
         }
       } else {
+        // action不存在，则直接赋值
         prev[key] = obj[key]
       }
     })
