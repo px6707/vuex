@@ -10,13 +10,18 @@ export class Store {
     // Auto install if it is not done yet and `window` has `Vue`.
     // To allow users to avoid auto-installation in some cases,
     // this code should be placed here. See #731
+    // Vue不存在，且window存在Vue，说明是浏览器环境下使用了CDN，需要手动安装
     if (!Vue && typeof window !== 'undefined' && window.Vue) {
       install(window.Vue)
     }
 
     if (__DEV__) {
+      // 打印报错信息
+      // 不存在Vue说明没有install
       assert(Vue, `must call Vue.use(Vuex) before creating a store instance.`)
+      // 不存在Promise，但vuex依赖Promise
       assert(typeof Promise !== 'undefined', `vuex requires a Promise polyfill in this browser.`)
+      // this不是Store实例说明没有new
       assert(this instanceof Store, `store must be called with the new operator.`)
     }
 
@@ -26,11 +31,14 @@ export class Store {
     } = options
 
     // store internal state
+    // 状态初始化
+    // 是否是提交中
     this._committing = false
     this._actions = Object.create(null)
     this._actionSubscribers = []
     this._mutations = Object.create(null)
     this._wrappedGetters = Object.create(null)
+    // 模块收集
     this._modules = new ModuleCollection(options)
     this._modulesNamespaceMap = Object.create(null)
     this._subscribers = []
@@ -40,6 +48,7 @@ export class Store {
     // bind commit and dispatch to self
     const store = this
     const { dispatch, commit } = this
+    // 绑定dispatch方法，解决在解构时修改this的指向问题
     this.dispatch = function boundDispatch (type, payload) {
       return dispatch.call(store, type, payload)
     }
@@ -49,7 +58,7 @@ export class Store {
 
     // strict mode
     this.strict = strict
-
+    // 初始化state
     const state = this._modules.root.state
 
     // init root module.
@@ -62,6 +71,7 @@ export class Store {
     resetStoreVM(this, state)
 
     // apply plugins
+    // 安装插件
     plugins.forEach(plugin => plugin(this))
 
     const useDevtools = options.devtools !== undefined ? options.devtools : Vue.config.devtools
@@ -69,11 +79,11 @@ export class Store {
       devtoolPlugin(this)
     }
   }
-
+  // 从 Vue 实例中获取响应式的 state
   get state () {
     return this._vm._data.$$state
   }
-
+  // 禁止直接替换 state，必须通过 replaceState
   set state (v) {
     if (__DEV__) {
       assert(false, `use store.replaceState() to explicit replace store state.`)
@@ -82,6 +92,7 @@ export class Store {
 
   commit (_type, _payload, _options) {
     // check object-style commit
+    // 统一参数格式（支持对象风格的提交）
     const {
       type,
       payload,
@@ -89,6 +100,7 @@ export class Store {
     } = unifyObjectStyle(_type, _payload, _options)
 
     const mutation = { type, payload }
+    // 获取对应的 mutation
     const entry = this._mutations[type]
     if (!entry) {
       if (__DEV__) {
@@ -96,12 +108,13 @@ export class Store {
       }
       return
     }
+    // 在变更记录状态下执行 mutation
     this._withCommit(() => {
       entry.forEach(function commitIterator (handler) {
         handler(payload)
       })
     })
-
+    // 在变更记录状态下执行 mutation
     this._subscribers
       .slice() // shallow copy to prevent iterator invalidation if subscriber synchronously calls unsubscribe
       .forEach(sub => sub(mutation, this.state))
@@ -119,11 +132,12 @@ export class Store {
 
   dispatch (_type, _payload) {
     // check object-style dispatch
+    // 统一参数格式
     const {
       type,
       payload
     } = unifyObjectStyle(_type, _payload)
-
+    // 2. 获取对应的 action
     const action = { type, payload }
     const entry = this._actions[type]
     if (!entry) {
@@ -132,7 +146,7 @@ export class Store {
       }
       return
     }
-
+    // 执行 action 前的订阅者回调
     try {
       this._actionSubscribers
         .slice() // shallow copy to prevent iterator invalidation if subscriber synchronously calls unsubscribe
@@ -144,13 +158,14 @@ export class Store {
         console.error(e)
       }
     }
-
+    // 执行 action 并处理结果
     const result = entry.length > 1
       ? Promise.all(entry.map(handler => handler(payload)))
       : entry[0](payload)
-
+    // 5. 返回 Promise
     return new Promise((resolve, reject) => {
       result.then(res => {
+        // 成功后执行 after 订阅者
         try {
           this._actionSubscribers
             .filter(sub => sub.after)
@@ -161,8 +176,10 @@ export class Store {
             console.error(e)
           }
         }
+        // resolve结果
         resolve(res)
       }, error => {
+        // 失败后执行 error 订阅者
         try {
           this._actionSubscribers
             .filter(sub => sub.error)
@@ -179,27 +196,28 @@ export class Store {
   }
 
   subscribe (fn, options) {
+    // 订阅 mutation
     return genericSubscribe(fn, this._subscribers, options)
   }
-
+  // 订阅 action
   subscribeAction (fn, options) {
     const subs = typeof fn === 'function' ? { before: fn } : fn
     return genericSubscribe(subs, this._actionSubscribers, options)
   }
-
+  // 观察 state 变化
   watch (getter, cb, options) {
     if (__DEV__) {
       assert(typeof getter === 'function', `store.watch only accepts a function.`)
     }
     return this._watcherVM.$watch(() => getter(this.state, this.getters), cb, options)
   }
-
+  // 状态替换方法
   replaceState (state) {
     this._withCommit(() => {
       this._vm._data.$$state = state
     })
   }
-
+  // 注册模块
   registerModule (path, rawModule, options = {}) {
     if (typeof path === 'string') path = [path]
 
@@ -207,13 +225,15 @@ export class Store {
       assert(Array.isArray(path), `module path must be a string or an Array.`)
       assert(path.length > 0, 'cannot register the root module by using registerModule.')
     }
-
+    // 使用根模块的register方法进行注册
     this._modules.register(path, rawModule)
+    // 注册后那幢
     installModule(this, this.state, path, this._modules.get(path), options.preserveState)
     // reset store to update getters...
     resetStoreVM(this, this.state)
   }
 
+  // 取消注册模块
   unregisterModule (path) {
     if (typeof path === 'string') path = [path]
 
@@ -330,6 +350,7 @@ function resetStoreVM (store, state, hot) {
 
 function installModule (store, rootState, path, module, hot) {
   const isRoot = !path.length
+  // 获取模块命名空间
   const namespace = store._modules.getNamespace(path)
 
   // register in namespace map
@@ -337,11 +358,13 @@ function installModule (store, rootState, path, module, hot) {
     if (store._modulesNamespaceMap[namespace] && __DEV__) {
       console.error(`[vuex] duplicate namespace ${namespace} for the namespaced module ${path.join('/')}`)
     }
+    // 添加命名空间和模块的映射
     store._modulesNamespaceMap[namespace] = module
   }
 
   // set state
   if (!isRoot && !hot) {
+    // 获取父级state
     const parentState = getNestedState(rootState, path.slice(0, -1))
     const moduleName = path[path.length - 1]
     store._withCommit(() => {
@@ -352,28 +375,30 @@ function installModule (store, rootState, path, module, hot) {
           )
         }
       }
+      // 设置state
       Vue.set(parentState, moduleName, module.state)
     })
   }
 
   const local = module.context = makeLocalContext(store, namespace, path)
-
+  // 注册模块的各个部分
+  // 注册 Mutation
   module.forEachMutation((mutation, key) => {
     const namespacedType = namespace + key
     registerMutation(store, namespacedType, mutation, local)
   })
-
+  // 注册 Actions
   module.forEachAction((action, key) => {
     const type = action.root ? key : namespace + key
     const handler = action.handler || action
     registerAction(store, type, handler, local)
   })
-
+  // 注册 Getter
   module.forEachGetter((getter, key) => {
     const namespacedType = namespace + key
     registerGetter(store, namespacedType, getter, local)
   })
-
+  // 递归安装子模块
   module.forEachChild((child, key) => {
     installModule(store, rootState, path.concat(key), child, hot)
   })
@@ -523,7 +548,9 @@ function getNestedState (state, path) {
 }
 
 function unifyObjectStyle (type, payload, options) {
+  // 如果type是对象
   if (isObject(type) && type.type) {
+    // 获取type上的参数
     options = payload
     payload = type
     type = type.type

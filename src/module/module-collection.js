@@ -1,6 +1,7 @@
 import Module from './module'
 import { assert, forEachValue } from '../util'
 
+// 模块收集的类
 export default class ModuleCollection {
   constructor (rawRootModule) {
     // register root module (Vuex.Store options)
@@ -31,15 +32,18 @@ export default class ModuleCollection {
     }
 
     const newModule = new Module(rawModule, runtime)
+    // 还没有patch，则作为根模块
     if (path.length === 0) {
       this.root = newModule
     } else {
+      // 上一个模块作为父模块
       const parent = this.get(path.slice(0, -1))
       parent.addChild(path[path.length - 1], newModule)
     }
 
     // register nested modules
     if (rawModule.modules) {
+      // 当前模块有子模块，递归注册，更新path
       forEachValue(rawModule.modules, (rawChildModule, key) => {
         this.register(path.concat(key), rawChildModule, runtime)
       })
